@@ -7,8 +7,9 @@ using the local Qwen3-Embedding-0.6B model.
 ## Build sequence
 
 1. **PDF sentence catalog (implemented).** Extract text and preserve citations.
-2. **Embedding index (next).** Encode sentences with the local Qwen model and
-   persist normalized vectors together with their catalog IDs.
+2. **Embedding index (implemented).** Filter the catalog, encode surviving
+   sentences with the local Qwen model, and persist normalized vectors with
+   their catalog IDs.
 3. **Search.** Encode a query, rank by cosine similarity, and display 5–10 hits.
 
 ## Step 1: prepare the PDFs
@@ -46,5 +47,43 @@ reported rather than silently treated as searchable. Language selection applies
 to the whole run, so mixed-language documents need further handling.
 
 The existing `download_model.py` is a one-time online model setup script.
-`test_model.py` remains the local embedding smoke test. No embedding index or
-search command is implemented yet.
+`test_model.py` remains the local embedding smoke test.
+
+## Step 2: build the embedding index
+
+Install embedding dependencies once while connected (already present if you
+ran `test_model.py`):
+
+```sh
+.venv/bin/python -m pip install -r requirements-search.txt
+```
+
+Filter the catalog and report what would be indexed, without loading the model:
+
+```sh
+.venv/bin/python build_index.py --dry-run
+```
+
+Then encode locally. The script disables Hugging Face network access and loads
+only `models/Qwen3-Embedding-0.6B`. On this Mac it uses MPS when available.
+
+```sh
+.venv/bin/python build_index.py
+```
+
+Outputs (regenerated when the catalog, model path, or filter rules change):
+
+- `data/embeddings.npy`: L2-normalized `float32` matrix, one row per sentence.
+- `data/index_meta.jsonl`: row-aligned `id`, `text`, `file`, `page`, `page_label`.
+- `data/index_config.json`: model path, dimension, query prompt name, catalog
+  hash, and filter settings. Rebuilds are skipped when this fingerprint matches.
+- `data/index_report.json`: per-file kept/dropped counts.
+
+Step 1.5 runs inside the indexer: line-end hyphens are joined, then short
+fragments, dotted TOC lines, and scan/garbage text are dropped so they are not
+embedded. Use `--force` to rebuild anyway, `--limit N` for a partial smoke
+index, `--batch-size` (default 8), and `--device cpu` to avoid GPU/MPS. Long sentences
+are truncated at 512 tokens so a table dump cannot exhaust MPS memory.
+
+Documents are encoded with no instruct prefix. Queries (step 3) must use
+`prompt_name="query"`. No search command is implemented yet.
