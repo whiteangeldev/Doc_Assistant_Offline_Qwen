@@ -18,6 +18,36 @@ def sentences(text, segmenter):
     return [s.strip() for s in segmenter.segment(text) if any(c.isalpha() for c in s)]
 
 
+def extract_pdf(path, source, segmenter):
+    """Extract page-addressable sentences from one PDF. Raises on file-level errors."""
+    relative = path.relative_to(source).as_posix()
+    digest = hashlib.sha256(path.read_bytes()).hexdigest()
+    reader = PdfReader(path)
+    if reader.is_encrypted and not reader.decrypt(""):
+        raise ValueError("Password-protected PDF")
+    labels = reader.page_labels
+    info = {"file": relative, "sha256": digest, "pages": len(reader.pages),
+            "sentences": 0, "empty_pages": []}
+    records = []
+    errors = []
+    for number, page in enumerate(reader.pages, start=1):
+        try:
+            text = page.extract_text() or ""
+            if not text.strip():
+                info["empty_pages"].append(number)
+                continue
+            for index, sentence in enumerate(sentences(text, segmenter)):
+                records.append({
+                    "id": f"{digest}:{number}:{index}",
+                    "text": sentence, "file": relative,
+                    "page": number, "page_label": labels[number - 1],
+                })
+                info["sentences"] += 1
+        except Exception as exc:
+            errors.append({"file": relative, "page": number, "error": str(exc)})
+    return digest, records, info, errors
+
+
 def prepare(source, output, language="en"):
     segmenter = pysbd.Segmenter(language=language, clean=False)
     files = sorted(p for p in source.rglob("*") if p.suffix.lower() == ".pdf")
@@ -34,28 +64,9 @@ def prepare(source, output, language="en"):
             report["duplicates"].append({"file": relative, "same_as": seen[digest]})
             continue
         try:
-            reader = PdfReader(path)
-            if reader.is_encrypted and not reader.decrypt(""):
-                raise ValueError("Password-protected PDF")
-            labels = reader.page_labels
-            info = {"file": relative, "sha256": digest, "pages": len(reader.pages),
-                    "sentences": 0, "empty_pages": []}
-            for number, page in enumerate(reader.pages, start=1):
-                try:
-                    text = page.extract_text() or ""
-                    if not text.strip():
-                        info["empty_pages"].append(number)
-                        continue
-                    for index, sentence in enumerate(sentences(text, segmenter)):
-                        records.append({
-                            "id": f"{digest}:{number}:{index}",
-                            "text": sentence, "file": relative,
-                            "page": number, "page_label": labels[number - 1],
-                        })
-                        info["sentences"] += 1
-                except Exception as exc:
-                    report["errors"].append({"file": relative, "page": number,
-                                             "error": str(exc)})
+            digest, extracted, info, errors = extract_pdf(path, source, segmenter)
+            records.extend(extracted)
+            report["errors"].extend(errors)
             seen[digest] = relative
             report["documents"].append(info)
             print(f"{relative}: {info['pages']} pages, {info['sentences']} sentences", flush=True)

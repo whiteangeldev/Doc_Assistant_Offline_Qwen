@@ -31,7 +31,7 @@ def load_index(index_dir):
             "Index is a partial --limit build. Run build_index.py without --limit."
         )
     import numpy as np
-    vectors = np.load(vectors_path, mmap_mode="r")
+    vectors = np.asarray(np.load(vectors_path), dtype=np.float32)
     meta = []
     with meta_path.open(encoding="utf-8") as stream:
         for line in stream:
@@ -63,6 +63,8 @@ def encode_query(model, query, prompt_name):
 def rank_hits(query_vector, vectors, meta, top_k):
     import numpy as np
 
+    if vectors is None or getattr(vectors, "shape", (0,))[0] == 0 or not meta:
+        return []
     scores = vectors @ query_vector
     count = min(top_k, scores.shape[0])
     order = np.argpartition(-scores, count - 1)[:count]
@@ -91,6 +93,17 @@ def search(query, index_dir, model_path, top_k=8, device=None):
     vectors, meta, config = load_index(index_dir)
     prompt_name = config.get("query_prompt_name") or QUERY_PROMPT_NAME
     model, resolved_device, _ = load_embedder(model_path, device)
+    from sync_index import SourceWatcher
+
+    _changed, payload = SourceWatcher(ROOT / "source", index_dir).poll(
+        model, resolved_device, model_path,
+    )
+    if payload is not None:
+        vectors = payload["vectors"]
+        meta = payload["meta"]
+        if payload.get("config"):
+            config = payload["config"]
+            prompt_name = config.get("query_prompt_name") or QUERY_PROMPT_NAME
     query_vector = np.asarray(encode_query(model, query, prompt_name), dtype=np.float32)
     return rank_hits(query_vector, vectors, meta, top_k), resolved_device
 

@@ -1,4 +1,4 @@
-streamlit==1.64.0
-pymupdf==1.28.2
+fastapi==0.128.0
+uvicorn==0.53.0
 pymysql==1.1.2
 cryptography==50.0.1

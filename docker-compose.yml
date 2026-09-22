@@ -1,0 +1,18 @@
+# Optional disposable MySQL if you are not using the Homebrew server on :3306.
+services:
+  mysql:
+    image: mysql:8.4
+    container_name: docsearch-mysql
+    environment:
+      MYSQL_ROOT_PASSWORD: docsearch
+      MYSQL_DATABASE: docsearch
+      MYSQL_USER: docsearch
+      MYSQL_PASSWORD: docsearch
+    ports:
+      - "3306:3306"
+    command: --character-set-server=utf8mb4 --collation-server=utf8mb4_unicode_ci
+    volumes:
+      - docsearch-mysql-data:/var/lib/mysql
+      - ./mysql/init.sql:/docker-entrypoint-initdb.d/01-init.sql:ro
+volumes:
+  docsearch-mysql-data:

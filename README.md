@@ -140,3 +140,100 @@ results, and Search. Each card shows the sentence, cosine score, filename, and
 page. **Open PDF at page** writes a temporary copy with the matching sentence
 highlighted, serves it from `http://127.0.0.1`, and opens that page in your
 default browser. Preview cannot jump or highlight from a `file://` link.
+
+On this LAN Mac, bind the UI so other machines can open it:
+
+```sh
+.venv/bin/python -m streamlit run app.py --server.address 0.0.0.0
+```
+
+## Live source updates
+
+Drop a PDF into `source/` (or delete/replace one). The running Streamlit app
+and FastAPI service watch the folder every 2 seconds, wait until the file
+size is stable, then extract, filter, and embed only the new document. After
+that, searches include it the same way as the original corpus. Removed PDFs
+leave the index; byte-identical copies are skipped.
+
+No full rebuild is required. A one-shot CLI search also syncs before ranking:
+
+```sh
+.venv/bin/python sync_index.py
+.venv/bin/python search.py "your query"
+```
+
+## FastAPI for Express
+
+The Streamlit app is a prototype UI. For a JavaScript + Express front end, run
+this service instead. It loads the local model once and answers JSON only.
+
+```sh
+.venv/bin/python -m pip install -r requirements-api.txt
+.venv/bin/python api.py
+```
+
+Listens on `0.0.0.0:8000` so other machines on the LAN can reach it. The
+service also watches `source/` and hot-swaps the in-memory index when PDFs
+are added or removed. CORS still allows only `localhost` / `127.0.0.1`
+browser origins; have Express proxy `/api/search` if the front end is served
+from another host.
+
+```http
+GET /api/health
+
+POST /api/search
+Content-Type: application/json
+
+{ "query": "hybrid index for newspaper archives", "top_k": 8 }
+```
+
+`top_k` is 5–10 (default 8). Each hit includes `rank`, `score`, `text`, `file`,
+`page`, `page_label`, and `id`. Express should proxy:
+
+```js
+const r = await fetch("http://127.0.0.1:8000/api/search", {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({ query, top_k: 8 }),
+});
+```
+
+## MySQL text search
+
+PDF search stays on `source/`. A second corpus is a local MySQL table with
+only `title` and `content` (plus an `id` and `updated_at` used for sync).
+This Mac already has Homebrew MySQL 9 listening on `127.0.0.1:3306`. Create
+the app database, user, table, and 12 sample rows:
+
+```sh
+.venv/bin/python -m pip install -r requirements-db.txt
+.venv/bin/python text_db.py --init
+.venv/bin/python search_db.py --sync
+.venv/bin/python search_db.py "kelp fiber winter power"
+```
+
+Defaults: host `127.0.0.1`, database/user/password `docsearch`. Override with
+`MYSQL_HOST`, `MYSQL_PORT`, `MYSQL_USER`, `MYSQL_PASSWORD`, `MYSQL_DATABASE`.
+Admin bootstrap uses `MYSQL_ADMIN_USER` / `MYSQL_ADMIN_PASSWORD` (root, empty
+password on this machine).
+
+The Streamlit **MySQL text** tab and `POST /api/search/db` use the same local
+Qwen model. New or edited rows become searchable on the next 2-second poll.
+
+```http
+POST /api/search/db
+Content-Type: application/json
+
+{ "query": "kelp fiber winter power", "top_k": 8 }
+```
+
+Hits are `{ rank, score, id, title, content }`. Add or remove rows without
+rebuilding:
+
+```sh
+.venv/bin/python text_db.py --add --title "New note" --content "Plain text only."
+.venv/bin/python text_db.py --list
+```
+
+Optional: `docker compose up -d` if you would rather run MySQL in a container
+than use the Homebrew server. Do not start both on port 3306.
