@@ -10,7 +10,8 @@ using the local Qwen3-Embedding-0.6B model.
 2. **Embedding index (implemented).** Filter the catalog, encode surviving
    sentences with the local Qwen model, and persist normalized vectors with
    their catalog IDs.
-3. **Search.** Encode a query, rank by cosine similarity, and display 5–10 hits.
+3. **Search (implemented).** Encode a query, rank by cosine similarity, and
+   display 5–10 hits.
 
 ## Step 1: prepare the PDFs
 
@@ -85,5 +86,20 @@ embedded. Use `--force` to rebuild anyway, `--limit N` for a partial smoke
 index, `--batch-size` (default 8), and `--device cpu` to avoid GPU/MPS. Long sentences
 are truncated at 512 tokens so a table dump cannot exhaust MPS memory.
 
-Documents are encoded with no instruct prefix. Queries (step 3) must use
-`prompt_name="query"`. No search command is implemented yet.
+Documents are encoded with no instruct prefix. Queries use `prompt_name="query"`.
+
+## Step 3: search
+
+Requires the index from step 2. Runs offline against the local model:
+
+```sh
+.venv/bin/python search.py "How does the Federal Reserve monitor financial stability?"
+.venv/bin/python search.py --top-k 5 "NIST AI risk management functions"
+```
+
+Each hit is a cosine score, the PDF filename, the 1-based physical page, and
+the matching sentence. `--top-k` must be 5–10 (default 8). Use `--index` and
+`--model` to override the default `data/` index and local Qwen path.
+
+The score is ranking similarity, not factual confidence. SEARCH returns source
+sentences only; it does not generate an answer.
