@@ -60,16 +60,9 @@ def encode_query(model, query, prompt_name):
     return vector[0]
 
 
-def search(query, index_dir, model_path, top_k=8, device=None):
+def rank_hits(query_vector, vectors, meta, top_k):
     import numpy as np
 
-    query = (query or "").strip()
-    if not query:
-        raise ValueError("Query is empty.")
-    vectors, meta, config = load_index(index_dir)
-    prompt_name = config.get("query_prompt_name") or QUERY_PROMPT_NAME
-    model, resolved_device, _ = load_embedder(model_path, device)
-    query_vector = np.asarray(encode_query(model, query, prompt_name), dtype=np.float32)
     scores = vectors @ query_vector
     count = min(top_k, scores.shape[0])
     order = np.argpartition(-scores, count - 1)[:count]
@@ -86,7 +79,20 @@ def search(query, index_dir, model_path, top_k=8, device=None):
             "page_label": row.get("page_label"),
             "id": row.get("id"),
         })
-    return hits, resolved_device
+    return hits
+
+
+def search(query, index_dir, model_path, top_k=8, device=None):
+    import numpy as np
+
+    query = (query or "").strip()
+    if not query:
+        raise ValueError("Query is empty.")
+    vectors, meta, config = load_index(index_dir)
+    prompt_name = config.get("query_prompt_name") or QUERY_PROMPT_NAME
+    model, resolved_device, _ = load_embedder(model_path, device)
+    query_vector = np.asarray(encode_query(model, query, prompt_name), dtype=np.float32)
+    return rank_hits(query_vector, vectors, meta, top_k), resolved_device
 
 
 def format_hit(hit):

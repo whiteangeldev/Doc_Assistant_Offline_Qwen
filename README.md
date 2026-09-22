@@ -12,6 +12,9 @@ using the local Qwen3-Embedding-0.6B model.
    their catalog IDs.
 3. **Search (implemented).** Encode a query, rank by cosine similarity, and
    display 5–10 hits.
+4. **Eval (implemented).** Run known queries and check that the expected PDF
+   appears in the top hits.
+5. **SEARCH UI (implemented).** Local Streamlit page over the same index.
 
 ## Step 1: prepare the PDFs
 
@@ -103,3 +106,37 @@ the matching sentence. `--top-k` must be 5–10 (default 8). Use `--index` and
 
 The score is ranking similarity, not factual confidence. SEARCH returns source
 sentences only; it does not generate an answer.
+
+## Step 4: evaluate ranking
+
+Loads the model once and runs a fixed set of known queries (Fed, NIST, Columbia,
+Alice, Fluke, FOMC, IRS Pub 15, OSHA handbook, rare-event paper, Archives
+transcript, the unindexed dust scan, and one Chinese paraphrase):
+
+```sh
+.venv/bin/python eval_search.py
+```
+
+A case passes when the expected filename is in the top 8 hits. The dust case
+passes if `3371COMBUSTIBLE-DUST.pdf` does not appear (it was never indexed).
+The Chinese query is reported but not required. Writes `data/eval_report.json`.
+
+## Step 5: SEARCH UI
+
+Install the UI dependency once while connected:
+
+```sh
+.venv/bin/python -m pip install -r requirements-app.txt
+```
+
+Then start the local app (binds to localhost only):
+
+```sh
+.venv/bin/python -m streamlit run app.py --server.address 127.0.0.1
+```
+
+The first load pulls the local model into memory. Type a query, choose 5–10
+results, and Search. Each card shows the sentence, cosine score, filename, and
+page. **Open PDF at page** writes a temporary copy with the matching sentence
+highlighted, serves it from `http://127.0.0.1`, and opens that page in your
+default browser. Preview cannot jump or highlight from a `file://` link.
